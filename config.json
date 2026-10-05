@@ -1,0 +1,11 @@
+{
+  "group": "А20",
+  "course": 2,
+  "timezone": "Europe/Kyiv",
+  "page_url": "https://ztk.org.ua/page/46",
+  "files_base": "https://ztk.org.ua/files/",
+  "main_pdf_fallback_url": "",
+  "probe_days_ahead": 7,
+  "main_recheck_hours": 6,
+  "user_agent": "ztk-schedule-sync/1.0 (personal student schedule; low frequency)"
+}
