@@ -1,0 +1,51 @@
+name: Оновлення даних розкладу
+
+on:
+  schedule:
+    - cron: "*/30 3-20 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-schedule
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Встановити залежності
+        run: pip install -r requirements.txt
+
+      - name: Зібрати дані з сайту ЗТК
+        id: build
+        continue-on-error: true
+        run: python scripts/build_data.py
+
+      - name: Зберегти зміни
+        run: |
+          git config user.name "schedule-bot"
+          git config user.email "schedule-bot@users.noreply.github.com"
+          git add data/a20.json
+          if git diff --cached --quiet; then
+            echo "Змін немає"
+          else
+            git commit -m "Оновлення даних розкладу"
+            git push
+          fi
+
+      - name: Позначити помилку, якщо збірка не вдалась
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "Збірка даних завершилась помилкою, дивіться кроки вище."
+          exit 1
