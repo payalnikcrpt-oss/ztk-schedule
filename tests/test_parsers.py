@@ -6,9 +6,9 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
 
-from changes_parser import parse_changes            # noqa: E402
+from changes_parser import parse_changes, parse_changes_all  # noqa: E402
 from common import norm_group, split_groups          # noqa: E402
-from schedule_parser import ParseError, parse_main_schedule  # noqa: E402
+from schedule_parser import ParseError, parse_all_groups, parse_main_schedule  # noqa: E402
 
 MAIN = os.path.join(HERE, "fixtures", "schedule_2_course.pdf")
 CHG = os.path.join(HERE, "fixtures", "changes_06.10.2026.pdf")
@@ -94,6 +94,38 @@ class TestChanges(unittest.TestCase):
 
     def test_second_group_in_comma_list(self):
         self.assertEqual(len(parse_changes(CHG, "Фк36А")["changes"]), 1)
+
+
+class TestAllGroups(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.res = parse_all_groups(MAIN)
+
+    def test_group_list(self):
+        g = self.res["groups"]
+        self.assertEqual(len(g), 20)
+        for name in ("А20", "А20А", "МТ22А", "ЕЛ21", "ФК26А"):
+            self.assertIn(name, g)
+
+    def test_no_warnings(self):
+        self.assertEqual(self.res["warnings"], [])
+
+    def test_same_as_single_group(self):
+        for name in ("А20", "МТ22А", "М24А"):
+            self.assertEqual(self.res["groups"][name], parse_main_schedule(MAIN, name)["schedule"])
+
+    def test_changes_all_same_as_single(self):
+        groups = list(self.res["groups"])
+        allr = parse_changes_all(CHG, groups)
+        self.assertEqual(allr["date"], "2026-10-06")
+        self.assertEqual(allr["rows_total"], 10)
+        for name in groups:
+            self.assertEqual(allr["changes"][name], parse_changes(CHG, name)["changes"], name)
+
+    def test_changes_all_only_requested(self):
+        r = parse_changes_all(CHG, ["А20", "E34"])
+        self.assertEqual(sorted(r["changes"]), ["А20", "Е34"])
+        self.assertEqual([c["pair"] for c in r["changes"]["Е34"]], [3, 4])
 
 
 class TestCommon(unittest.TestCase):

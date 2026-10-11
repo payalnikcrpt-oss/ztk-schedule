@@ -35,7 +35,26 @@ const Utilities = {
   },
 };
 
-const ctx = vm.createContext({ Utilities, console, Object, JSON, Math, parseInt, String, Date });
+// Заглушка SpreadsheetApp: лише те, що потрібно для збирання тексту клітинок тижня
+const SpreadsheetApp = {
+  newRichTextValue() {
+    let text = '';
+    const o = { setText(t) { text = t; return o; }, setTextStyle() { return o; }, build() { return { getText: () => text }; } };
+    return o;
+  },
+  newTextStyle() {
+    const o = { setBold() { return o; }, setForegroundColor() { return o; }, setFontSize() { return o; }, build() { return {}; } };
+    return o;
+  },
+};
+
+const __props = {};
+const PropertiesService = { getDocumentProperties: () => ({
+  getProperty: (k) => (k in __props ? __props[k] : null),
+  setProperty: (k, v) => { __props[k] = v; },
+}) };
+
+const ctx = vm.createContext({ Utilities, SpreadsheetApp, PropertiesService, console, Object, JSON, Math, parseInt, String, Date });
 vm.runInContext(code, ctx);
 const run = (src) => vm.runInContext(src, ctx);
 
@@ -149,17 +168,108 @@ t('Заміна на 5 пару не ламає таблицю, а потрап�
   ctx.__data = data;
 });
 
-t('Тиждень: ЧОТ зверху, НЕ ЧОТ знизу, порожні клітинки залишаються порожніми', () => {
-  const w = run('buildWeekRows_(__data, __bells)');
-  assert.strictEqual(w.rows.length, 5 * 4 * 2);
-  const mon1 = w.rows[0], mon1b = w.rows[1];
-  assert.strictEqual(mon1.label, 'ЧОТ'); assert.strictEqual(mon1.subject, 'Українська література');
-  assert.strictEqual(mon1b.label, 'НЕ ЧОТ'); assert.strictEqual(mon1b.subject, '');
-  const thu3 = w.rows[(3 * 4 + 2) * 2];
-  assert.ok(thu3.subject.startsWith('Електротехніка')); assert.strictEqual(thu3.label, 'ЧОТ');
-  assert.ok(w.rows[(3 * 4 + 2) * 2 + 1].subject.startsWith('Електроніка'));
-  const fri4 = w.rows[(4 * 4 + 3) * 2];
-  assert.strictEqual(fri4.subject, ''); assert.strictEqual(fri4.label, '');
+const weekOf = (iso) => {
+  ctx.__d = new Date(iso + 'T12:00:00+03:00'); ctx.__tz = TZ;
+  ctx.__t = run('partsFor_(__d, __tz)');
+  return run('weekDays_(__t, __tz)');
+};
+
+t('Тиждень: у будні це Пн-Пт цього тижня, у вихідні наступного', () => {
+  assert.deepStrictEqual(Array.from(weekOf('2026-10-14').map(p => p.display)),
+    ['12.10.2026', '13.10.2026', '14.10.2026', '15.10.2026', '16.10.2026']);
+  assert.strictEqual(weekOf('2026-10-12')[0].display, '12.10.2026');
+  assert.strictEqual(weekOf('2026-10-16')[0].display, '12.10.2026');
+  assert.strictEqual(weekOf('2026-10-10')[0].display, '12.10.2026'); // субота
+  assert.strictEqual(weekOf('2026-10-11')[0].display, '12.10.2026'); // неділя
+});
+
+t('Тиждень: сітка без ЧОТ/НЕ ЧОТ, пари за реальними датами', () => {
+  ctx.__days = weekOf('2026-10-07');            // тиждень 05.10-09.10
+  const w = run('buildWeekGrid_(__data, __bells, __days)');
+  assert.strictEqual(w.rich.length, 4);
+  w.rich.forEach(r => assert.strictEqual(r.length, 6));
+  const cell = (r, c) => w.rich[r][c].getText();
+  w.rich.forEach(r => r.forEach(c => assert.ok(!/ЧОТ/.test(c.getText()))));
+  assert.ok(cell(0, 0).includes('1 пара') && cell(0, 0).includes('08:00') && cell(0, 0).includes('09:20'));
+  // Пн 05.10 (НЕ ЧОТ): 1 пари немає
+  assert.strictEqual(cell(0, 1), '—'); assert.strictEqual(w.h[0][1], 'center');
+  // Чт 08.10 (ЧОТ): 3 пара Електротехніка
+  assert.ok(cell(2, 4).startsWith('Електротехніка'));
+  // Пт, 4 пара: порожньо
+  assert.strictEqual(cell(3, 5), '—');
+  // звичайні пари на сірому тлі
+  assert.strictEqual(w.bg[2][4], '#f3f4f6');
+});
+
+t('Тиждень: інший тиждень дає іншу парність (Чт 15.10 = Електроніка)', () => {
+  ctx.__days = weekOf('2026-10-14');            // тиждень 12.10-16.10
+  const w = run('buildWeekGrid_(__data, __bells, __days)');
+  assert.ok(w.rich[2][4].getText().startsWith('Електроніка'));
+});
+
+t('Тиждень: заміна підсвічується, скасована теж', () => {
+  const d2 = JSON.parse(JSON.stringify(data));
+  d2.changes['2026-10-06'] = [{ pair: 2, subject: 'Нова пара', teacher: 'Т.Т.', room: '5', cancelled: false },
+                              { pair: 3, subject: 'скасовано', teacher: '', room: '', cancelled: true }];
+  ctx.__d2 = d2; ctx.__days = weekOf('2026-10-07');
+  const w = run('buildWeekGrid_(__d2, __bells, __days)');
+  assert.ok(w.rich[1][2].getText().startsWith('Нова пара'));
+  assert.strictEqual(w.bg[1][2], '#fde68a'); assert.strictEqual(w.bg[2][2], '#fde68a');
+});
+
+t('Налаштування: службові рядки сховані, статус показується лише при проблемі', () => {
+  const calls = [];
+  const sh = { showRows: (r, n) => calls.push(['show', r, n || 1]), hideRows: (r, n) => calls.push(['hide', r, n || 1]) };
+  ctx.__sh = sh;
+  run('applySettingsVisibility_(__sh, false, false)');
+  assert.deepStrictEqual(calls, [['hide', 3, 1], ['hide', 5, 1], ['hide', 6, 1], ['hide', 7, 1], ['hide', 8, 7]]);
+  calls.length = 0;
+  run('applySettingsVisibility_(__sh, true, true)');
+  assert.deepStrictEqual(calls.slice(0, 4), [['show', 3, 1], ['hide', 5, 1], ['hide', 6, 1], ['show', 7, 1]]);
+  calls.length = 0;
+  __props.showAdvanced = '1';                    // «Показати службові налаштування»
+  run('applySettingsVisibility_(__sh, false, false)');
+  assert.strictEqual(calls.length, 0);
+  delete __props.showAdvanced;
+});
+
+t('Групи: старий файл (одна група) і вибір з різним написанням', () => {
+  const names = run('listGroups_(__data)');
+  assert.deepStrictEqual(Array.from(names), ['А20']);
+  ctx.__names = names; ctx.__w = 'A20';   // латинська A
+  const g = run('pickGroup_(__data, __names, __w)');
+  assert.strictEqual(g.name, 'А20'); assert.strictEqual(g.note, '');
+  assert.ok(g.schedule['1']);
+});
+
+t('Групи: файл з кількома групами, сортування, вибір і невідома група', () => {
+  const multi = { groups: {
+    'МТ22А': { schedule: { '1': {} }, changes: { '2026-10-12': [] } },
+    'А20': { schedule: data.schedule, changes: data.changes },
+    'ЕЛ21': { schedule: {}, changes: {} },
+  } };
+  ctx.__multi = multi;
+  const names = run('listGroups_(__multi)');
+  assert.deepStrictEqual(Array.from(names), ['А20', 'ЕЛ21', 'МТ22А']);
+  ctx.__names = names; ctx.__w = 'мт22а';
+  const g = run('pickGroup_(__multi, __names, __w)');
+  assert.strictEqual(g.name, 'МТ22А'); assert.deepStrictEqual(Object.keys(g.schedule), ['1']);
+  ctx.__w = 'Я99';
+  const bad = run('pickGroup_(__multi, __names, __w)');
+  assert.strictEqual(bad.name, 'А20'); assert.ok(bad.note.includes('Я99'));
+});
+
+t('Групи: розклад дня береться саме з вибраної групи', () => {
+  const multi = { groups: {
+    'А20': { schedule: data.schedule, changes: {} },
+    'МТ22А': { schedule: { '1': { '1': { mode: 'always', entry: { subject: 'Тестовий предмет', teacher: 'Т.Т.', room: '1' } } } }, changes: {} },
+  } };
+  ctx.__multi = multi; ctx.__names = run('listGroups_(__multi)'); ctx.__w = 'МТ22А';
+  const g = run('pickGroup_(__multi, __names, __w)');
+  ctx.__g = g; ctx.__d = new Date('2026-10-05T12:00:00+03:00'); ctx.__tz = TZ;
+  ctx.__p = run('partsFor_(__d, __tz)');
+  const r = run('resolveDay_(__g, __p, __bells)');
+  assert.strictEqual(subj(r, 1), 'Тестовий предмет');
 });
 
 console.log(`\nУсього пройшло: ${n}`);

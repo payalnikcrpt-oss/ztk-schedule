@@ -8,6 +8,10 @@
   - групи йдуть колонками, кожна: [№ пари][предмет | викладач][аудиторія]
   - 5 днів (Пн-Пт) блоками зверху вниз, у кожному 5 рядків-пар
   - рядок може бути розділений навпіл: верхня половина = ЧОТ, нижня = НЕ ЧОТ
+
+Дві точки входу:
+  parse_main_schedule(pdf, group)  - одна група
+  parse_all_groups(pdf)            - усі групи, що є в заголовках PDF
 """
 import re
 import sys
@@ -117,6 +121,69 @@ def _entry(subject, teacher, room):
     return {"subject": subject, "teacher": teacher, "room": room}
 
 
+def _parse_group(page, chars, cx):
+    """Розклад однієї колонки групи (cx - центр заголовка). -> (schedule, warnings)."""
+    g = _group_geometry(page, cx)
+    warnings = []
+
+    def in_x(c, x0, x1):
+        mx = (c["x0"] + c["x1"]) / 2
+        return x0 <= mx < x1
+
+    schedule = {}
+    for d, (dt, db) in enumerate(g["days"], start=1):
+        rh = (db - dt) / PAIRS_PER_DAY
+        schedule[str(d)] = {}
+        for k in range(PAIRS_PER_DAY):
+            rt, rb = dt + rh * k, dt + rh * (k + 1)
+            mid = [y for y in g["hlines"] if rt + 1.5 < y < rb - 1.5]
+            halves = [(rt, rb)] if not mid else [(rt, mid[0]), (mid[0], rb)]
+
+            def cell(a, b, x0, x1):
+                return _text([
+                    c for c in chars
+                    if in_x(c, x0, x1) and a <= (c["top"] + c["bottom"]) / 2 < b
+                ])
+
+            subj = [cell(a, b, g["bx0"], g["div"]) for a, b in halves]
+            teach = [cell(a, b, g["div"], g["bx1"] + 0.1) for a, b in halves]
+            aud_row = [cell(a, b, g["aud"][0], g["aud"][1] + 0.1) for a, b in halves]
+
+            for i in range(len(halves)):
+                if bool(subj[i]) != bool(teach[i]):
+                    warnings.append(
+                        f"{DAYS[d-1]} пара {k+1}: у клітинці лише предмет або лише викладач"
+                    )
+
+            has = [bool(subj[i] or teach[i]) for i in range(len(halves))]
+            rooms_present = [r for r in aud_row if r]
+
+            def room_for(i):
+                if len(halves) == 1:
+                    return aud_row[0]
+                if sum(has) == 2 and len(rooms_present) == 2:
+                    return aud_row[i]
+                return rooms_present[0] if rooms_present else ""
+
+            entries = [
+                _entry(subj[i], teach[i], room_for(i)) if has[i] else None
+                for i in range(len(halves))
+            ]
+
+            if len(halves) == 1:
+                slot = {"mode": "always", "entry": entries[0]} if entries[0] else None
+            else:
+                up, low = entries
+                if up and low and up == low:
+                    slot = {"mode": "always", "entry": up}
+                elif up or low:
+                    slot = {"mode": "split", "even": up, "odd": low}
+                else:
+                    slot = None
+            schedule[str(d)][str(k + 1)] = slot
+    return schedule, warnings
+
+
 def parse_main_schedule(pdf_path, group):
     """Повертає {'group','schedule': {'1'..'5': {'1'..'5': slot}}, 'warnings': [...]}.
 
@@ -124,7 +191,6 @@ def parse_main_schedule(pdf_path, group):
     E = {'subject','teacher','room'}.  even = ЧОТ (верхня половина), odd = НЕ ЧОТ.
     """
     target = norm_group(group)
-    warnings = []
     with pdfplumber.open(pdf_path) as pdf:
         page = pdf.pages[0]
         headers = _find_group_headers(page)
@@ -132,66 +198,38 @@ def parse_main_schedule(pdf_path, group):
             raise ParseError(
                 f"Групу {target} не знайдено в заголовках PDF. Знайдені: {', '.join(sorted(headers))}"
             )
-        g = _group_geometry(page, headers[target])
-        chars = [c for c in page.chars if c["text"] != "" ]
-
-        def in_x(c, x0, x1):
-            cx = (c["x0"] + c["x1"]) / 2
-            return x0 <= cx < x1
-
-        schedule = {}
-        for d, (dt, db) in enumerate(g["days"], start=1):
-            rh = (db - dt) / PAIRS_PER_DAY
-            schedule[str(d)] = {}
-            for k in range(PAIRS_PER_DAY):
-                rt, rb = dt + rh * k, dt + rh * (k + 1)
-                mid = [y for y in g["hlines"] if rt + 1.5 < y < rb - 1.5]
-                halves = [(rt, rb)] if not mid else [(rt, mid[0]), (mid[0], rb)]
-
-                def cell(a, b, x0, x1):
-                    return _text([
-                        c for c in chars
-                        if in_x(c, x0, x1) and a <= (c["top"] + c["bottom"]) / 2 < b
-                    ])
-
-                subj = [cell(a, b, g["bx0"], g["div"]) for a, b in halves]
-                teach = [cell(a, b, g["div"], g["bx1"] + 0.1) for a, b in halves]
-                aud_row = [cell(a, b, g["aud"][0], g["aud"][1] + 0.1) for a, b in halves]
-
-                for i in range(len(halves)):
-                    if bool(subj[i]) != bool(teach[i]):
-                        warnings.append(
-                            f"{DAYS[d-1]} пара {k+1}: у клітинці лише предмет або лише викладач"
-                        )
-
-                has = [bool(subj[i] or teach[i]) for i in range(len(halves))]
-                rooms_present = [r for r in aud_row if r]
-
-                def room_for(i):
-                    if len(halves) == 1:
-                        return aud_row[0]
-                    if sum(has) == 2 and len(rooms_present) == 2:
-                        return aud_row[i]
-                    return rooms_present[0] if rooms_present else ""
-
-                entries = [
-                    _entry(subj[i], teach[i], room_for(i)) if has[i] else None
-                    for i in range(len(halves))
-                ]
-
-                if len(halves) == 1:
-                    slot = {"mode": "always", "entry": entries[0]} if entries[0] else None
-                else:
-                    up, low = entries
-                    if up and low and up == low:
-                        slot = {"mode": "always", "entry": up}
-                    elif up or low:
-                        slot = {"mode": "split", "even": up, "odd": low}
-                    else:
-                        slot = None
-                schedule[str(d)][str(k + 1)] = slot
-
+        chars = [c for c in page.chars if c["text"] != ""]
+        schedule, warnings = _parse_group(page, chars, headers[target])
     return {"group": target, "schedule": schedule, "warnings": warnings}
+
+
+def parse_all_groups(pdf_path):
+    """Усі групи з усіх сторінок PDF.
+
+    -> {'groups': {назва: schedule}, 'warnings': [...]}
+    Група, яку не вдалося розібрати, пропускається з попередженням (інші не страждають).
+    """
+    groups, warnings = {}, []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            headers = _find_group_headers(page)
+            if not headers:
+                continue
+            chars = [c for c in page.chars if c["text"] != ""]
+            for name in sorted(headers, key=lambda k: headers[k]):
+                if name in groups:
+                    warnings.append(f"{name}: група зустрілась у PDF двічі, взято першу")
+                    continue
+                try:
+                    schedule, w = _parse_group(page, chars, headers[name])
+                except ParseError as e:
+                    warnings.append(f"{name}: {e}")
+                    continue
+                groups[name] = schedule
+                warnings += [f"{name}: {x}" for x in w]
+    if not groups:
+        raise ParseError("У PDF не знайдено жодної групи")
+    return {"groups": groups, "warnings": warnings}
 
 
 if __name__ == "__main__":
