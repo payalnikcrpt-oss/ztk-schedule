@@ -1,15 +1,15 @@
 {
  "meta": {
   "group": "А20",
-  "generated_at": "2026-10-18T06:14:10+03:00",
+  "generated_at": "2026-10-19T06:18:00+03:00",
   "main_pdf_url": "https://ztk.org.ua/files/Розклад занять 2 курс 20265.pdf",
   "main_pdf_sha256": "64084498b30b18481a5783baa5bff98cd72eb3d322dde6600503d854cbc0607f",
-  "main_checked_at": "2026-10-18T06:14:10+03:00",
+  "main_checked_at": "2026-10-19T06:18:00+03:00",
   "sources": {
    "1": {
     "url": "https://ztk.org.ua/files/Розклад занять 1 курс 20262.pdf",
     "sha256": "1643085a95fdc68c5f5dee6bfc98853d9a23720499d8361077e739d6a4926c82",
-    "checked_at": "2026-10-18T06:14:10+03:00",
+    "checked_at": "2026-10-19T06:18:00+03:00",
     "groups": [
      "А10",
      "А11",
@@ -33,7 +33,7 @@
    "2": {
     "url": "https://ztk.org.ua/files/Розклад занять 2 курс 20265.pdf",
     "sha256": "64084498b30b18481a5783baa5bff98cd72eb3d322dde6600503d854cbc0607f",
-    "checked_at": "2026-10-18T06:14:10+03:00",
+    "checked_at": "2026-10-19T06:18:00+03:00",
     "groups": [
      "А20",
      "А20А",
@@ -60,7 +60,7 @@
    "3": {
     "url": "https://ztk.org.ua/files/Розклад занять 3 курс 20264.pdf",
     "sha256": "d3aa534fd71cafe4c670c117a4a128cb424b18ade8688a7b4f75636a8ebfd152",
-    "checked_at": "2026-10-18T06:14:10+03:00",
+    "checked_at": "2026-10-19T06:18:00+03:00",
     "groups": [
      "Д38",
      "Д39",
