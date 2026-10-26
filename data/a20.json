@@ -1,7 +1,7 @@
 {
  "meta": {
   "group": "А20",
-  "generated_at": "2026-10-26T09:39:22+02:00",
+  "generated_at": "2026-10-26T10:31:33+02:00",
   "main_pdf_url": "https://ztk.org.ua/files/Розклад занять 2 курс 20265.pdf",
   "main_pdf_sha256": "64084498b30b18481a5783baa5bff98cd72eb3d322dde6600503d854cbc0607f",
   "main_checked_at": "2026-10-26T05:21:08+02:00",
@@ -2050,14 +2050,14 @@
      {
       "pair": 3,
       "subject": "Основи національного спротиву",
-      "teacher": "Черкас В.М.",
+      "teacher": "Черкес В.М.",
       "room": "305",
       "cancelled": false
      },
      {
       "pair": 4,
       "subject": "Основи національного спротиву",
-      "teacher": "Черкас В.М.",
+      "teacher": "Черкес В.М.",
       "room": "305",
       "cancelled": false
      }
@@ -6975,14 +6975,14 @@
      {
       "pair": 3,
       "subject": "Основи національного спротиву",
-      "teacher": "Черкас В.М.",
+      "teacher": "Черкес В.М.",
       "room": "305",
       "cancelled": false
      },
      {
       "pair": 4,
       "subject": "Основи національного спротиву",
-      "teacher": "Черкас В.М.",
+      "teacher": "Черкес В.М.",
       "room": "305",
       "cancelled": false
      }
